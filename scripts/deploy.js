@@ -1,33 +1,41 @@
-// We require the Hardhat Runtime Environment explicitly here. This is optional
-// but useful for running the script in a standalone fashion through `node <script>`.
-//
-// You can also run a script with `npx hardhat run <script>`. If you do that, Hardhat
-// will compile your contracts, add the Hardhat Runtime Environment's members to the
-// global scope, and execute the script.
 const hre = require("hardhat");
+const fs = require('fs');
+const { ethers } = require("hardhat");
 
-async function main() {
-  const currentTimestampInSeconds = Math.round(Date.now() / 1000);
-  const unlockTime = currentTimestampInSeconds + 60;
-
-  const lockedAmount = hre.ethers.parseEther("0.001");
-
-  const lock = await hre.ethers.deployContract("Lock", [unlockTime], {
-    value: lockedAmount,
-  });
-
-  await lock.waitForDeployment();
-
-  console.log(
-    `Lock with ${ethers.formatEther(
-      lockedAmount
-    )}ETH and unlock timestamp ${unlockTime} deployed to ${lock.target}`
-  );
+async function setProxyAddresses(config,contract_name,contract_address) {
+  config[contract_name+"_PROXY_CONTRACT_ADDRESS"] = contract_address;
+  config[contract_name+"_CONTRACT_ADDRESS"] = await hre.upgrades.erc1967.getImplementationAddress(contract_address);
+  config[contract_name+"_PROXY_ADMIN_CONTRACT_ADDRESS"] = await hre.upgrades.erc1967.getAdminAddress(contract_address);
 }
 
-// We recommend this pattern to be able to use async/await everywhere
-// and properly handle errors.
-main().catch((error) => {
-  console.error(error);
-  process.exitCode = 1;
-});
+async function deployFanTigerContract(config) {
+  const contractFactory= await hre.ethers.getContractFactory("V2FanTV_dapp");
+  const nft_contract = await hre.upgrades.deployProxy(contractFactory, {kind:"transparent"});
+
+
+  console.log(nft_contract.address);
+  await nft_contract.deployed();
+  await setProxyAddresses(config,"FANTIGER",nft_contract.address);
+  return nft_contract;
+}
+
+async function main() {
+
+  [owner] = await ethers.getSigners();
+  config = {
+    "OWNER_ADDRESS" : owner.address
+  }
+
+  tx = await deployFanTigerContract(config);
+  console.log('NFT Contract',tx);
+  console.log(config);
+  fs.writeFileSync('./scripts/xfantv.json',JSON.stringify(config,null,4),{encoding: 'utf8',flag: 'w'});
+}
+
+main()
+  .then(() => process.exit(0))
+  .catch(error => {
+    console.error(error);
+    process.exit(1);
+  });
+  
